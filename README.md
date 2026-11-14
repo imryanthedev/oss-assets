@@ -31,10 +31,10 @@ assets/
 
 ### Example
 For a fix submitted to `zed-industries/zed` on PR `#66960`:
-- **Repository path:** `assets/zed-industries/zed/pr-66960/scroll-fix-after.gif`
+- **Repository path:** `assets/zed-industries/zed/pr-66960/preview-shown.gif`
 - **Markdown embed URL:**
   ```markdown
-  ![Scroll fix demonstration](https://raw.githubusercontent.com/imryanthedev/oss-assets/main/assets/zed-industries/zed/pr-66960/scroll-fix-after.gif)
+  ![Demonstration](https://raw.githubusercontent.com/imryanthedev/oss-assets/main/assets/zed-industries/zed/pr-66960/preview-shown.gif)
   ```
 
 ---
@@ -43,7 +43,10 @@ For a fix submitted to `zed-industries/zed` on PR `#66960`:
 
 ### Method 1: GitHub Contents API via `gh api` (Zero Git Checkout Required)
 
-Agents can autonomously upload media without cloning this repository using the GitHub Contents API:
+Agents can autonomously upload media without cloning this repository using the GitHub Contents API.
+
+> [!IMPORTANT]
+> **Linux `ARG_MAX` buffer safety:** Never pass large base64 strings as CLI arguments (`-f content="$(base64 ...)"`) as Linux limits single arguments to 128KB, causing failures for files > ~96KB (especially GIFs and videos). Always stream the payload via a JSON file or stdin using `jq` and `--input`:
 
 ```bash
 #!/usr/bin/env bash
@@ -56,12 +59,20 @@ PR_OR_ISSUE="pr-66960"
 FILE_NAME="$(basename "$FILE_PATH")"
 TARGET_PATH="assets/${ORG}/${REPO}/${PR_OR_ISSUE}/${FILE_NAME}"
 
-# Upload base64-encoded file via GitHub REST API
+# Prepare JSON payload safely avoiding Linux command argument length limits
+TMP_PAYLOAD=$(mktemp)
+trap 'rm -f "$TMP_PAYLOAD"' EXIT
+
+jq -n \
+  --arg m "assets(${ORG}/${REPO}): add visual proof for ${PR_OR_ISSUE}" \
+  --rawfile c <(base64 -w 0 "$FILE_PATH") \
+  '{message: $m, content: $c}' > "$TMP_PAYLOAD"
+
+# Upload via GitHub Contents API
 RAW_URL=$(gh api \
   --method PUT \
   "/repos/imryanthedev/oss-assets/contents/${TARGET_PATH}" \
-  -f message="assets(${ORG}/${REPO}): add visual proof for ${PR_OR_ISSUE}" \
-  -f content="$(base64 -w 0 "$FILE_PATH")" \
+  --input "$TMP_PAYLOAD" \
   --jq .content.download_url)
 
 echo "Uploaded successfully: $RAW_URL"
